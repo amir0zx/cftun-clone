@@ -1,6 +1,6 @@
 {
   "$schema": "https://developers.cloudflare.com/wrangler/config-schema.json",
-  "name": "crimsoncf",
+  "name": "cftun-clone",
   "main": "worker/src/index.ts",
   "compatibility_date": "2026-02-13",
 
