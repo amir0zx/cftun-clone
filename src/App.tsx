@@ -154,7 +154,7 @@ function toCsv(rows: ExportRow[]): string {
   };
   const lines = [headers.join(",")];
   for (const row of rows) lines.push(headers.map((h) => esc(row[h])).join(","));
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 
 function exportRows(
@@ -179,7 +179,7 @@ function exportRows(
   }
 
   if (format === "txt") {
-    const text = rows.map((r) => Object.values(r)[0]).join("\\n");
+    const text = rows.map((r) => Object.values(r)[0]).join("\n");
     downloadBlob(new Blob([text], { type: "text/plain" }), `${name}.txt`);
     return;
   }
