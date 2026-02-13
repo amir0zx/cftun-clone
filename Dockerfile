@@ -5,7 +5,8 @@ WORKDIR /app
 
 # Yarn v1 is fine here
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+RUN yarn config set registry https://registry.npmjs.org \
+  && yarn install --frozen-lockfile --network-timeout 600000
 
 COPY . .
 RUN yarn build
@@ -18,7 +19,8 @@ ENV PORT=8080
 ENV SERVE_STATIC=1
 
 COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile --production
+RUN yarn config set registry https://registry.npmjs.org \
+  && yarn install --frozen-lockfile --production --network-timeout 600000
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
