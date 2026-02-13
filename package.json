@@ -2,6 +2,7 @@
   "name": "cftun-clone",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "yarn@4.5.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k \"node server/index.mjs\" \"vite\"",

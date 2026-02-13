@@ -155,6 +155,7 @@ const STORAGE_KEYS = {
   proxyExport: "cftun_proxy_export_v1",
   dns: "cftun_dns_v1",
   vless: "cftun_vless_v1",
+  apiBaseUrl: "cftun_api_base_url_v1",
 };
 
 const DEFAULT_RANGES = [
@@ -432,11 +433,14 @@ function yamlEscape(s: string): string {
 }
 
 async function probeIp(
+  apiBaseUrl: string,
   ip: string,
   ports: number[],
   signal?: AbortSignal,
 ): Promise<ProbeResponse> {
-  const response = await fetch("/api/probe", {
+  const base = apiBaseUrl.trim().replace(/\/+$/g, "");
+  const url = base ? `${base}/api/probe` : "/api/probe";
+  const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ip, ports }),
@@ -447,6 +451,7 @@ async function probeIp(
 }
 
 async function cfReplaceARecords(input: {
+  apiBaseUrl?: string;
   token: string;
   zoneId: string;
   name: string;
@@ -454,10 +459,12 @@ async function cfReplaceARecords(input: {
   proxied: boolean;
   ttl: number;
 }): Promise<{ ok: boolean; replaced?: unknown; error?: string }> {
-  const res = await fetch("/api/cf/dns/replace-a", {
+  const base = String(input.apiBaseUrl || "").trim().replace(/\/+$/g, "");
+  const url = base ? `${base}/api/cf/dns/replace-a` : "/api/cf/dns/replace-a";
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({ ...input, apiBaseUrl: undefined }),
   });
   const json = (await res.json().catch(() => null)) as
     | { ok: boolean; replaced?: unknown; error?: string }
@@ -515,6 +522,9 @@ function buildVlessUri(input: {
 function App() {
   const [ranges, setRanges] = useState<string[]>(() =>
     readStorage(STORAGE_KEYS.ranges, DEFAULT_RANGES),
+  );
+  const [apiBaseUrl, setApiBaseUrl] = useState<string>(() =>
+    readStorage<string>(STORAGE_KEYS.apiBaseUrl, ""),
   );
   const [selectedRanges, setSelectedRanges] = useState<string[]>([]);
   const [history, setHistory] = useState<ScanBatch[]>(() =>
@@ -640,6 +650,7 @@ function App() {
   useEffect(() => writeStorage(STORAGE_KEYS.proxyExport, proxyExport), [proxyExport]);
   useEffect(() => writeStorage(STORAGE_KEYS.dns, dnsSettings), [dnsSettings]);
   useEffect(() => writeStorage(STORAGE_KEYS.vless, vlessSettings), [vlessSettings]);
+  useEffect(() => writeStorage(STORAGE_KEYS.apiBaseUrl, apiBaseUrl), [apiBaseUrl]);
 
   const mergedResults = liveResults.length ? liveResults : allResults;
 
@@ -996,7 +1007,7 @@ function App() {
       abortersRef.current.push(controller);
 
       try {
-        const probe = await probeIp(target.ip, ports, controller.signal);
+        const probe = await probeIp(apiBaseUrl, target.ip, ports, controller.signal);
         const tcp80 = probe.l4.find((t) => t.port === 80)?.status || "failed";
         const tcp443 = probe.l4.find((t) => t.port === 443)?.status || "failed";
         const tcp2053 =
@@ -1139,7 +1150,7 @@ function App() {
         if (i >= candidates.length) return;
         const ip = candidates[i];
         try {
-          const probe = await probeIp(ip, [port]);
+          const probe = await probeIp(apiBaseUrl, ip, [port]);
           const st = probe.l4[0]?.status || probe.overall;
           const lat = probe.l4[0]?.latency ?? null;
           out.push({ ip, port, status: st, latency: lat });
@@ -1303,6 +1314,7 @@ function App() {
     try {
       pushLog("info", `Cloudflare DNS replace: ${name} => ${ips.length} A records`);
       const out = await cfReplaceARecords({
+        apiBaseUrl,
         token,
         zoneId,
         name,
@@ -1881,6 +1893,14 @@ function App() {
           {activeTab === "scanner" && (
             <div className="panel-block">
               <div className="row-tools">
+                <label className="mini-field">
+                  Probe API
+                  <input
+                    value={apiBaseUrl}
+                    onChange={(e) => setApiBaseUrl(e.target.value)}
+                    placeholder="(same origin) or http://localhost:8787"
+                  />
+                </label>
                 <button
                   className="btn ghost"
                   onClick={() =>
@@ -2083,6 +2103,17 @@ function App() {
                   }}
                 >
                   Preset: CF IPv6
+                </button>
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={async () => {
+                    if (!sources.length) return void toast.error("No sources to fetch");
+                    pushLog("info", `Fetching all sources (${sources.length})`);
+                    for (const s of sources) await fetchSource(s);
+                  }}
+                >
+                  Fetch All
                 </button>
               </div>
               <div className="source-form">
