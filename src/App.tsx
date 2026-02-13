@@ -3,6 +3,7 @@ import {
   Activity,
   Cloud,
   Database,
+  Download,
   Gauge,
   Play,
   Radar,
@@ -16,6 +17,8 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Area,
   AreaChart,
+  Bar,
+  BarChart,
   Cell,
   Pie,
   PieChart,
@@ -25,10 +28,15 @@ import {
   YAxis,
 } from 'recharts';
 import { Toaster, toast } from 'sonner';
+import * as XLSX from 'xlsx';
 
 type ProbeState = 'success' | 'failed' | 'timeout' | 'pending';
 type BatchStatus = 'running' | 'completed' | 'cancelled';
-type Tab = 'scanner' | 'sources' | 'history' | 'results' | 'analytics';
+type Tab = 'scanner' | 'sources' | 'history' | 'results' | 'analytics' | 'export';
+
+type ExportFormat = 'txt' | 'csv' | 'json' | 'xlsx';
+
+type ExportRow = Record<string, string | number | null>;
 
 type ProbeResponse = {
   ip: string;
@@ -117,6 +125,57 @@ function readStorage<T>(key: string, fallback: T): T {
 
 function writeStorage<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function toCsv(rows: ExportRow[]): string {
+  if (rows.length === 0) return '';
+  const headers = Object.keys(rows[0]);
+  const esc = (v: unknown) => {
+    const s = String(v ?? '');
+    if (/[\",\\n]/.test(s)) return `\"${s.replace(/\"/g, '\"\"')}\"`;
+    return s;
+  };
+  const lines = [headers.join(',')];
+  for (const row of rows) lines.push(headers.map((h) => esc(row[h])).join(','));
+  return lines.join('\\n');
+}
+
+function exportRows(format: ExportFormat, rows: ExportRow[], filenameBase: string): void {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const name = `${filenameBase}_${ts}`;
+
+  if (format === 'json') {
+    downloadBlob(new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' }), `${name}.json`);
+    return;
+  }
+
+  if (format === 'csv') {
+    downloadBlob(new Blob([toCsv(rows)], { type: 'text/csv' }), `${name}.csv`);
+    return;
+  }
+
+  if (format === 'txt') {
+    const text = rows.map((r) => Object.values(r)[0]).join('\\n');
+    downloadBlob(new Blob([text], { type: 'text/plain' }), `${name}.txt`);
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'export');
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  downloadBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${name}.xlsx`);
 }
 
 function isValidIPv4(ip: string): boolean {
@@ -234,11 +293,16 @@ function App() {
 
   const [sourceName, setSourceName] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
-  const [portsInput, setPortsInput] = useState('80,443,7844,2053,2083,2087,2096,8443');
+  const [portToggles, setPortToggles] = useState<number[]>([80, 443, 7844, 2053, 2083, 2087, 2096, 8443]);
+  const [customPort, setCustomPort] = useState('');
   const [scanWorkers, setScanWorkers] = useState(20);
   const [sampleMode, setSampleMode] = useState<'sequential' | 'random'>('random');
 
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [resultFilterQuery, setResultFilterQuery] = useState('');
+  const [resultFilterStatus, setResultFilterStatus] = useState<'all' | 'success' | 'failed'>('all');
+  const [resultFilterMinOpen, setResultFilterMinOpen] = useState(0);
+  const [resultOnlyLastBatch, setResultOnlyLastBatch] = useState(true);
 
   const runRef = useRef(false);
   const abortersRef = useRef<AbortController[]>([]);
@@ -246,6 +310,20 @@ function App() {
   function pushLog(level: LogEntry['level'], text: string): void {
     const entry: LogEntry = { id: crypto.randomUUID(), ts: new Date().toLocaleTimeString(), level, text };
     setLogs((prev) => [entry, ...prev].slice(0, 250));
+  }
+
+  function togglePort(port: number): void {
+    setPortToggles((prev) => (prev.includes(port) ? prev.filter((p) => p !== port) : [...prev, port]));
+  }
+
+  function addCustomPort(): void {
+    const p = Number(customPort.trim());
+    if (!Number.isInteger(p) || p < 1 || p > 65535) {
+      toast.error('Invalid port');
+      return;
+    }
+    setPortToggles((prev) => (prev.includes(p) ? prev : [...prev, p]));
+    setCustomPort('');
   }
 
   useEffect(() => writeStorage(STORAGE_KEYS.ranges, ranges), [ranges]);
@@ -292,6 +370,39 @@ function App() {
     });
     return [...byMinute.entries()].slice(-22).map(([time, count]) => ({ time, count }));
   }, [mergedResults]);
+
+  const filteredResults = useMemo(() => {
+    const q = resultFilterQuery.trim().toLowerCase();
+    let base = mergedResults;
+    if (resultOnlyLastBatch && currentBatch) base = base.filter((r) => r.batchId === currentBatch.id);
+    if (q) base = base.filter((r) => r.ipAddress.includes(q) || r.ipRange.toLowerCase().includes(q));
+    if (resultFilterStatus !== 'all') base = base.filter((r) => r.overall === resultFilterStatus);
+    base = base.filter((r) => r.openPorts >= resultFilterMinOpen);
+    return [...base].sort((a, b) => (a.latency ?? 1e9) - (b.latency ?? 1e9));
+  }, [currentBatch, mergedResults, resultFilterMinOpen, resultFilterQuery, resultFilterStatus, resultOnlyLastBatch]);
+
+  const openPortsDist = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const r of filteredResults) map.set(r.openPorts, (map.get(r.openPorts) ?? 0) + 1);
+    return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([openPorts, count]) => ({ openPorts, count }));
+  }, [filteredResults]);
+
+  const latencyBuckets = useMemo(() => {
+    // Buckets in ms for usefulness
+    const buckets = [50, 100, 200, 400, 800, 1500, 3000];
+    const counts = new Map<string, number>();
+    const labelFor = (ms: number | null) => {
+      if (ms == null) return 'n/a';
+      for (const b of buckets) if (ms <= b) return `<=${b}`;
+      return `>${buckets[buckets.length - 1]}`;
+    };
+    for (const r of filteredResults) {
+      const k = labelFor(r.latency);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    const order = ['<=50','<=100','<=200','<=400','<=800','<=1500','<=3000',`>${buckets[buckets.length-1]}`,'n/a'];
+    return order.filter((k) => counts.has(k)).map((k) => ({ bucket: k, count: counts.get(k) ?? 0 }));
+  }, [filteredResults]);
 
   const progress =
     currentBatch && currentBatch.totalIps > 0
@@ -376,13 +487,10 @@ function App() {
       return;
     }
 
-    const ports = portsInput
-      .split(',')
-      .map((p: string) => Number(p.trim()))
-      .filter((p: number) => Number.isInteger(p) && p > 0 && p <= 65535);
+    const ports = [...new Set(portToggles)].filter((p) => Number.isInteger(p) && p > 0 && p <= 65535).sort((a, b) => a - b);
     if (!ports.length) {
-      toast.error('Enter valid ports list, e.g. 80,443,2053');
-      pushLog('warn', 'Start scan blocked: invalid L4 ports input');
+      toast.error('Select at least one port');
+      pushLog('warn', 'Start scan blocked: no ports selected');
       return;
     }
 
@@ -538,12 +646,24 @@ function App() {
     { id: 'history', label: 'History', icon: <RefreshCw size={14} /> },
     { id: 'results', label: 'Results', icon: <Wifi size={14} /> },
     { id: 'analytics', label: 'Analytics', icon: <Gauge size={14} /> },
+    { id: 'export', label: 'Export', icon: <Download size={14} /> },
   ];
 
   const currentBatchResults = useMemo(() => {
     if (!currentBatch) return [];
     return mergedResults.filter((r) => r.batchId === currentBatch.id);
   }, [currentBatch, mergedResults]);
+
+  const validIpsLastBatch = useMemo(() => {
+    if (!currentBatch) return [];
+    return currentBatchResults.filter((r) => r.overall === 'success').map((r) => r.ipAddress);
+  }, [currentBatch, currentBatchResults]);
+
+  const validIpsAll = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of mergedResults) if (r.overall === 'success') set.add(r.ipAddress);
+    return [...set];
+  }, [mergedResults]);
 
   const summary = useMemo(() => {
     if (!currentBatch) return null;
@@ -564,6 +684,28 @@ function App() {
     };
   }, [currentBatch, currentBatchResults]);
 
+  function exportValidIps(format: ExportFormat, scope: 'last' | 'all', filenameBase: string): void {
+    const ips = scope === 'last' ? validIpsLastBatch : validIpsAll;
+    const rows: ExportRow[] = ips.map((ip) => ({ ip }));
+    exportRows(format, rows, filenameBase);
+  }
+
+  function exportResultsTable(format: ExportFormat, rows: ScanResult[], filenameBase: string): void {
+    const tableRows: ExportRow[] = rows.map((r) => ({
+      ip: r.ipAddress,
+      range: r.ipRange,
+      overall: r.overall,
+      tcp_80: r.tcp80,
+      tcp_443: r.tcp443,
+      tcp_2053: r.tcp2053,
+      tcp_8443: r.tcp8443,
+      open_ports: r.openPorts,
+      latency_ms: r.latency,
+      time: r.createdAt,
+    }));
+    exportRows(format, tableRows, filenameBase);
+  }
+
   return (
     <div className="ui-root">
       <Toaster theme="dark" richColors position="top-right" />
@@ -575,9 +717,9 @@ function App() {
       <div className="page-wrap">
         <motion.header className="hero" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <div>
-            <p className="eyebrow">CFTUN BASE44 CLONE</p>
+            <p className="eyebrow">CrimsonCLS</p>
             <h1>
-              <span>CLOUDFLARE</span> TUNNEL SCANNER
+              <span>CRIMSON</span> CLS SCANNER
             </h1>
             <p className="sub">L4 TCP handshake probing with persistent history, sources and live charts.</p>
           </div>
@@ -653,15 +795,52 @@ function App() {
                 <option value="sequential">sequential</option>
               </select>
             </label>
-            <label>
-              Ports
+          </div>
+
+          <div className="ports-panel">
+            <div className="ports-head">
+              <strong>Ports</strong>
+              <span className="muted">{portToggles.length} selected</span>
+            </div>
+            <div className="ports-grid">
+              {[80, 443, 7844, 2053, 2083, 2087, 2096, 8443].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`port-chip ${portToggles.includes(p) ? 'on' : ''}`}
+                  onClick={() => togglePort(p)}
+                >
+                  {p}
+                </button>
+              ))}
+              {portToggles
+                .filter((p) => ![80, 443, 7844, 2053, 2083, 2087, 2096, 8443].includes(p))
+                .sort((a, b) => a - b)
+                .map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="port-chip on custom"
+                    onClick={() => togglePort(p)}
+                    title="Click to remove"
+                  >
+                    {p}
+                  </button>
+                ))}
+            </div>
+            <div className="ports-add">
               <input
-                type="text"
-                value={portsInput}
-                onChange={(e) => setPortsInput(e.target.value)}
-                placeholder="80,443,7844,2053,2083,2087,2096,8443"
+                type="number"
+                min={1}
+                max={65535}
+                placeholder="Custom port"
+                value={customPort}
+                onChange={(e) => setCustomPort(e.target.value)}
               />
-            </label>
+              <button className="btn ghost" type="button" onClick={addCustomPort}>
+                Add
+              </button>
+            </div>
           </div>
 
           {(currentBatch || isScanning) && (
@@ -691,6 +870,8 @@ function App() {
               <div className="summary-actions">
                 <button className="btn ghost" type="button" onClick={clearResults}>Clear Results</button>
                 <button className="btn ghost" type="button" onClick={clearLogs}>Clear Logs</button>
+                <button className="btn ghost" type="button" onClick={() => exportValidIps('txt', 'last', 'crimsoncls_valid_ips_last')}>Export Valid (TXT)</button>
+                <button className="btn ghost" type="button" onClick={() => exportValidIps('xlsx', 'last', 'crimsoncls_valid_ips_last')}>Export Valid (XLSX)</button>
               </div>
             </div>
           )}
@@ -709,7 +890,6 @@ function App() {
               <div className="row-tools">
                 <button className="btn ghost" onClick={() => setSelectedRanges(selectedRanges.length === ranges.length ? [] : [...ranges])} type="button">{selectedRanges.length === ranges.length ? 'Unselect All' : 'Select All'}</button>
                 <button className="btn ghost" onClick={() => setSelectedRanges([])} type="button">Clear</button>
-                <button className="btn ghost" onClick={clearLogs} type="button">Clear Logs</button>
                 <button className="btn ghost" onClick={clearResults} type="button">Clear Results</button>
               </div>
               <div className="cidr-grid">
@@ -724,6 +904,9 @@ function App() {
                   <span className="dot yellow" />
                   <span className="dot green" />
                   <strong>Live Probe Log</strong>
+                  <div className="terminal-actions">
+                    <button className="btn ghost" type="button" onClick={clearLogs}>Clear</button>
+                  </div>
                 </div>
                 <div className="terminal-body">
                   {logs.length === 0 && <p className="terminal-empty">No logs yet. Start a scan to stream events.</p>}
@@ -793,7 +976,19 @@ function App() {
                     <Progress value={h.totalIps ? Math.round((h.successCount / h.totalIps) * 100) : 0} />
                     <div className="line3">
                       <small>{h.ipRanges.slice(0, 3).join(' · ')}</small>
-                      <button className="btn ghost" onClick={() => rerun(h)} type="button">Re-run</button>
+                      <div className="history-actions">
+                        <button className="btn ghost" onClick={() => rerun(h)} type="button">Re-run</button>
+                        <button
+                          className="btn ghost"
+                          onClick={() => {
+                            const batchResults = mergedResults.filter((r) => r.batchId === h.id && r.overall === 'success');
+                            exportRows('txt', batchResults.map((r) => ({ ip: r.ipAddress })), `crimsoncls_valid_ips_${h.id}`);
+                          }}
+                          type="button"
+                        >
+                          Export Valid
+                        </button>
+                      </div>
                     </div>
                   </article>
                 ))}
@@ -803,20 +998,79 @@ function App() {
 
           {activeTab === 'results' && (
             <div className="panel-block">
+              <div className="results-filters">
+                <div className="search-wrap">
+                  <Search size={14} />
+                  <input
+                    placeholder="Filter by IP or range..."
+                    value={resultFilterQuery}
+                    onChange={(e) => setResultFilterQuery(e.target.value)}
+                  />
+                </div>
+                <label>
+                  Status
+                  <select value={resultFilterStatus} onChange={(e) => setResultFilterStatus(e.target.value as any)}>
+                    <option value="all">all</option>
+                    <option value="success">success</option>
+                    <option value="failed">failed</option>
+                  </select>
+                </label>
+                <label>
+                  Min open ports
+                  <input
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={resultFilterMinOpen}
+                    onChange={(e) => setResultFilterMinOpen(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                </label>
+                <label className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={resultOnlyLastBatch}
+                    onChange={(e) => setResultOnlyLastBatch(e.target.checked)}
+                  />
+                  Only last scan
+                </label>
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => exportResultsTable('xlsx', filteredResults, 'crimsoncls_results_table')}
+                >
+                  Export Table (XLSX)
+                </button>
+              </div>
+
               <div className="table-wrap">
                 <table>
                   <thead>
                     <tr>
-                      <th>IP</th><th>Range</th><th>Overall</th><th>TCP:80</th><th>TCP:443</th><th>TCP:2053</th><th>TCP:8443</th><th>Open Ports</th><th>Latency</th><th>Time</th>
+                      <th>IP</th>
+                      <th>Range</th>
+                      <th>Overall</th>
+                      <th>TCP:80</th>
+                      <th>TCP:443</th>
+                      <th>TCP:2053</th>
+                      <th>TCP:8443</th>
+                      <th>Open Ports</th>
+                      <th>Latency</th>
+                      <th>Time</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {mergedResults.slice(0, 350).map((r) => (
+                    {filteredResults.slice(0, 500).map((r) => (
                       <tr key={r.id}>
-                        <td>{r.ipAddress}</td><td>{r.ipRange}</td><td className={`st ${r.overall}`}>{r.overall}</td>
-                        <td className={`st ${r.tcp80}`}>{r.tcp80}</td><td className={`st ${r.tcp443}`}>{r.tcp443}</td>
-                        <td className={`st ${r.tcp2053}`}>{r.tcp2053}</td><td className={`st ${r.tcp8443}`}>{r.tcp8443}</td>
-                        <td>{r.openPorts}</td><td>{r.latency ?? '-'}</td><td>{new Date(r.createdAt).toLocaleTimeString()}</td>
+                        <td>{r.ipAddress}</td>
+                        <td>{r.ipRange}</td>
+                        <td className={`st ${r.overall}`}>{r.overall}</td>
+                        <td className={`st ${r.tcp80}`}>{r.tcp80}</td>
+                        <td className={`st ${r.tcp443}`}>{r.tcp443}</td>
+                        <td className={`st ${r.tcp2053}`}>{r.tcp2053}</td>
+                        <td className={`st ${r.tcp8443}`}>{r.tcp8443}</td>
+                        <td>{r.openPorts}</td>
+                        <td>{r.latency ?? '-'}</td>
+                        <td>{new Date(r.createdAt).toLocaleTimeString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -859,6 +1113,71 @@ function App() {
                   </ResponsiveContainer>
                 </div>
               </article>
+              <article className="chart-card">
+                <h4>Latency Buckets (Filtered)</h4>
+                <div className="chart-wrap">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={latencyBuckets}>
+                      <XAxis dataKey="bucket" stroke="#9a5b5b" />
+                      <YAxis stroke="#9a5b5b" />
+                      <Tooltip contentStyle={{ background: '#130707', border: '1px solid #4d1a1a', color: '#ffd9d9' }} />
+                      <Bar dataKey="count" fill="#ff4f4f" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </article>
+              <article className="chart-card">
+                <h4>Open Ports Distribution (Filtered)</h4>
+                <div className="chart-wrap">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={openPortsDist}>
+                      <XAxis dataKey="openPorts" stroke="#9a5b5b" />
+                      <YAxis stroke="#9a5b5b" />
+                      <Tooltip contentStyle={{ background: '#130707', border: '1px solid #4d1a1a', color: '#ffd9d9' }} />
+                      <Bar dataKey="count" fill="#ffb366" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </article>
+            </div>
+          )}
+
+          {activeTab === 'export' && (
+            <div className="panel-block">
+              <h3 className="export-title">Export Center</h3>
+              <div className="export-grid">
+                <article className="export-card">
+                  <h4>Valid IPs (Last Scan)</h4>
+                  <p>{validIpsLastBatch.length} IPs</p>
+                  <div className="export-actions">
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('txt', 'last', 'crimsoncls_valid_ips_last')}>TXT</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('csv', 'last', 'crimsoncls_valid_ips_last')}>CSV</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('json', 'last', 'crimsoncls_valid_ips_last')}>JSON</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('xlsx', 'last', 'crimsoncls_valid_ips_last')}>XLSX</button>
+                  </div>
+                </article>
+
+                <article className="export-card">
+                  <h4>Valid IPs (All)</h4>
+                  <p>{validIpsAll.length} unique IPs</p>
+                  <div className="export-actions">
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('txt', 'all', 'crimsoncls_valid_ips_all')}>TXT</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('csv', 'all', 'crimsoncls_valid_ips_all')}>CSV</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('json', 'all', 'crimsoncls_valid_ips_all')}>JSON</button>
+                    <button className="btn ghost" type="button" onClick={() => exportValidIps('xlsx', 'all', 'crimsoncls_valid_ips_all')}>XLSX</button>
+                  </div>
+                </article>
+
+                <article className="export-card">
+                  <h4>Results Table (Filtered)</h4>
+                  <p>{filteredResults.length} rows (sorted by latency)</p>
+                  <div className="export-actions">
+                    <button className="btn ghost" type="button" onClick={() => exportResultsTable('csv', filteredResults, 'crimsoncls_results_table_filtered')}>CSV</button>
+                    <button className="btn ghost" type="button" onClick={() => exportResultsTable('json', filteredResults, 'crimsoncls_results_table_filtered')}>JSON</button>
+                    <button className="btn ghost" type="button" onClick={() => exportResultsTable('xlsx', filteredResults, 'crimsoncls_results_table_filtered')}>XLSX</button>
+                  </div>
+                </article>
+              </div>
             </div>
           )}
         </section>

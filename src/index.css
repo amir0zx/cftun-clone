@@ -140,7 +140,7 @@ body {
 
 .top-controls {
   display: grid;
-  grid-template-columns: 170px 1fr 1fr 1fr;
+  grid-template-columns: 170px 1fr 1fr 1fr 1fr;
   gap: 10px;
   margin-bottom: 10px;
   align-items: end;
@@ -503,4 +503,110 @@ th { position: sticky; top: 0; background: #190909; }
 
 @media (max-width: 760px) {
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.terminal-actions { margin-left: auto; }
+.terminal-actions .btn { padding: 6px 10px; border-radius: 10px; }
+
+.ports-panel {
+  border: 1px solid #2b1111;
+  border-radius: 14px;
+  background: #0f0606;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.ports-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ports-head strong { letter-spacing: .08em; text-transform: uppercase; }
+.muted { color: #a47777; }
+
+.ports-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.port-chip {
+  border: 1px solid #582323;
+  background: #120606;
+  color: #d7a4a4;
+  border-radius: 999px;
+  padding: 8px 12px;
+}
+
+.port-chip.on {
+  border-color: #d33a3a;
+  background: #5e0505;
+  color: #fff;
+}
+
+.port-chip.custom { background: #260909; }
+
+.ports-add {
+  display: grid;
+  grid-template-columns: 160px auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.results-filters {
+  display: grid;
+  grid-template-columns: 1.5fr 160px 170px 160px auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.checkbox-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #4b1919;
+  border-radius: 11px;
+  background: #0b0505;
+  color: #d6a2a2;
+}
+
+.checkbox-row input { width: auto; }
+
+.export-title { margin: 0 0 10px; }
+
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.export-card {
+  border: 1px solid #411818;
+  border-radius: 12px;
+  background: #100707;
+  padding: 12px;
+}
+
+.export-card h4 { margin: 0 0 6px; }
+.export-card p { margin: 0 0 10px; color: #ca9494; }
+
+.export-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (max-width: 1100px) {
+  .results-filters { grid-template-columns: 1fr 1fr; }
+  .export-grid { grid-template-columns: 1fr; }
 }
