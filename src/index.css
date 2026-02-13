@@ -86,6 +86,19 @@ body {
   color: #be7777;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  filter: drop-shadow(0 0 10px rgba(255, 60, 60, 0.28));
+  transform: translateY(-1px);
+}
+
 .hero h1 {
   margin: 4px 0 2px;
   font-size: clamp(1.4rem, 3.1vw, 2.7rem);

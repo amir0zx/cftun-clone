@@ -1,7 +1,7 @@
 {
   "name": "CrimsonCF",
   "short_name": "CrimsonCF",
-  "description": "L4 TCP handshake scanner for Cloudflare IP ranges with history, charts, and exports.",
+  "description": "Web app: L4 TCP handshake scanner for Cloudflare IP ranges with history, charts, exports, and DNS automation.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#040202",

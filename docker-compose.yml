@@ -1,7 +1,7 @@
 services:
   crimsoncf:
     container_name: crimsoncf
-    image: docker.io/amirzx/crimsoncf:latest
+    image: ghcr.io/amir0zx/crimsoncf:latest
     ports:
       - "8080:8080"
     environment:

@@ -2,7 +2,9 @@
 
 [English](README.md) | [فارسی](README.fa.md)
 
-**CrimsonCF (CrimsonCloudFlare)** is a fast **Cloudflare IP scanner** that tests endpoints using **Layer 4 (TCP handshake)** (not HTTPS), keeps scan history, exports clean newline TXT lists, and generates ready-to-import configs for **Xray-core**, **sing-box**, and **Clash**.
+**CrimsonCF (CrimsonCloudFlare)** is a fast **Cloudflare IP scanner web app** that tests endpoints using **Layer 4 (TCP handshake)** (not HTTPS), keeps scan history, exports clean newline TXT lists, and generates ready-to-import configs for **Xray-core**, **sing-box**, and **Clash**.
+
+![CrimsonCF web app screenshot](docs/screenshot.png)
 
 If you searched for: **cloudflare ip scanner**, **cloudflare ip range scanner**, **cloudflare tunnel ip scanner**, **warp ip scanner**, **fastest cloudflare ip**, this repo is built for that workflow.
 
@@ -54,4 +56,4 @@ Fix:
 
 ---
 
-Built by `github.com/amir0zx`
+Built by `github.com/amir0zx` with help from OpenAI ChatGPT (Codex).

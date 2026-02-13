@@ -1426,7 +1426,7 @@ function App() {
 
       downloadBlob(
         new Blob([JSON.stringify(config, null, 2)], { type: "application/json" }),
-        `crimsoncls_sing-box_${proto}_${ts}.json`,
+        `crimsoncf_sing-box_${proto}_${ts}.json`,
       );
       return;
     }
@@ -1464,7 +1464,7 @@ function App() {
         };
       });
 
-      const balancerTag = "crimsoncls-auto";
+      const balancerTag = "crimsoncf-auto";
       const config = {
         log: { loglevel: "warning" },
         inbounds: [
@@ -1496,7 +1496,7 @@ function App() {
 
       downloadBlob(
         new Blob([JSON.stringify(config, null, 2)], { type: "application/json" }),
-        `crimsoncls_xray_${proto}_${ts}.json`,
+        `crimsoncf_xray_${proto}_${ts}.json`,
       );
       return;
     }
@@ -1560,7 +1560,7 @@ function App() {
     if (kind === "clash_json") {
       downloadBlob(
         new Blob([JSON.stringify(clash, null, 2)], { type: "application/json" }),
-        `crimsoncls_clash_${proto}_${ts}.json`,
+        `crimsoncf_clash_${proto}_${ts}.json`,
       );
       return;
     }
@@ -1597,7 +1597,7 @@ function App() {
     const yaml = lines.join("\n");
     downloadBlob(
       new Blob([yaml], { type: "text/yaml" }),
-      `crimsoncls_clash_${proto}_${ts}.yaml`,
+      `crimsoncf_clash_${proto}_${ts}.yaml`,
     );
   }
 
@@ -1616,9 +1616,12 @@ function App() {
           animate={{ opacity: 1, y: 0 }}
         >
           <div>
-            <p className="eyebrow">CrimsonCF</p>
+            <div className="brand-row">
+              <img className="brand-mark" src="/icon.svg" alt="CrimsonCF" />
+              <p className="eyebrow">CrimsonCF</p>
+            </div>
             <h1>
-              <span>CRIMSON</span> CLS SCANNER
+              <span>CRIMSON</span> CF SCANNER
             </h1>
             <p className="sub">
               L4 TCP handshake probing with persistent history, sources and live
@@ -1858,7 +1861,7 @@ function App() {
                   className="btn ghost"
                   type="button"
                   onClick={() =>
-                    exportValidIps("txt", "last", "crimsoncls_valid_ips_last")
+                    exportValidIps("txt", "last", "crimsoncf_valid_ips_last")
                   }
                 >
                   Export Valid (TXT)
@@ -1867,7 +1870,7 @@ function App() {
                   className="btn ghost"
                   type="button"
                   onClick={() =>
-                    exportValidIps("xlsx", "last", "crimsoncls_valid_ips_last")
+                    exportValidIps("xlsx", "last", "crimsoncf_valid_ips_last")
                   }
                 >
                   Export Valid (XLSX)
@@ -2272,7 +2275,7 @@ function App() {
                             exportRows(
                               "txt",
                               batchResults.map((r) => ({ ip: r.ipAddress })),
-                              `crimsoncls_valid_ips_${h.id}`,
+                              `crimsoncf_valid_ips_${h.id}`,
                             );
                           }}
                           type="button"
@@ -2374,7 +2377,7 @@ function App() {
                     exportResultsTable(
                       "xlsx",
                       filteredResults,
-                      "crimsoncls_results_table",
+                      "crimsoncf_results_table",
                     )
                   }
                 >
@@ -2627,7 +2630,7 @@ function App() {
                         exportValidIps(
                           "txt",
                           "last",
-                          "crimsoncls_valid_ips_last",
+                          "crimsoncf_valid_ips_last",
                         )
                       }
                     >
@@ -2640,7 +2643,7 @@ function App() {
                         exportValidIps(
                           "json",
                           "last",
-                          "crimsoncls_valid_ips_last",
+                          "crimsoncf_valid_ips_last",
                         )
                       }
                     >
@@ -2653,7 +2656,7 @@ function App() {
                         exportValidIps(
                           "xlsx",
                           "last",
-                          "crimsoncls_valid_ips_last",
+                          "crimsoncf_valid_ips_last",
                         )
                       }
                     >
@@ -2670,7 +2673,7 @@ function App() {
                       className="btn ghost"
                       type="button"
                       onClick={() =>
-                        exportValidIps("txt", "all", "crimsoncls_valid_ips_all")
+                        exportValidIps("txt", "all", "crimsoncf_valid_ips_all")
                       }
                     >
                       TXT
@@ -2682,7 +2685,7 @@ function App() {
                         exportValidIps(
                           "json",
                           "all",
-                          "crimsoncls_valid_ips_all",
+                          "crimsoncf_valid_ips_all",
                         )
                       }
                     >
@@ -2695,7 +2698,7 @@ function App() {
                         exportValidIps(
                           "xlsx",
                           "all",
-                          "crimsoncls_valid_ips_all",
+                          "crimsoncf_valid_ips_all",
                         )
                       }
                     >
@@ -2715,7 +2718,7 @@ function App() {
                         exportResultsTable(
                           "json",
                           filteredResults,
-                          "crimsoncls_results_table_filtered",
+                          "crimsoncf_results_table_filtered",
                         )
                       }
                     >
@@ -2728,7 +2731,7 @@ function App() {
                         exportResultsTable(
                           "xlsx",
                           filteredResults,
-                          "crimsoncls_results_table_filtered",
+                          "crimsoncf_results_table_filtered",
                         )
                       }
                     >
@@ -2745,7 +2748,7 @@ function App() {
                       className="btn ghost"
                       type="button"
                       onClick={() =>
-                        exportCapabilityIpsTxt("cdn", "crimsoncls_cdn_ips_last")
+                        exportCapabilityIpsTxt("cdn", "crimsoncf_cdn_ips_last")
                       }
                     >
                       CDN TXT
@@ -2756,7 +2759,7 @@ function App() {
                       onClick={() =>
                         exportCapabilityIpsTxt(
                           "tunnel",
-                          "crimsoncls_tunnel_ips_last",
+                          "crimsoncf_tunnel_ips_last",
                         )
                       }
                     >
@@ -2768,7 +2771,7 @@ function App() {
                       onClick={() =>
                         exportCapabilityIpsTxt(
                           "warp",
-                          "crimsoncls_warp_tcp_heuristic_ips_last",
+                          "crimsoncf_warp_tcp_heuristic_ips_last",
                         )
                       }
                     >
@@ -2778,7 +2781,7 @@ function App() {
                       className="btn ghost"
                       type="button"
                       onClick={() =>
-                        exportCapabilityIpsTxt("bpb", "crimsoncls_bpb_ips_last")
+                        exportCapabilityIpsTxt("bpb", "crimsoncf_bpb_ips_last")
                       }
                     >
                       BPB TXT
@@ -3263,7 +3266,7 @@ function App() {
                       if (!lines) return void toast.error("No OK IPs to export");
                       downloadBlob(
                         new Blob([lines], { type: "text/plain" }),
-                        `crimsoncls_vless_uris_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
+                        `crimsoncf_vless_uris_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
                       );
                     }}
                   >
