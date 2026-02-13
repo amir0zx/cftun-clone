@@ -1,10 +1,10 @@
 import { Container } from "@cloudflare/containers";
 
 export interface Env {
-  APP_CONTAINER: DurableObjectNamespace<AppContainer>;
+  APP_CONTAINER: DurableObjectNamespace<CrimsonCFContainer>;
 }
 
-export class AppContainer extends Container {
+export class CrimsonCFContainer extends Container {
   defaultPort = 8080;
   requiredPorts = [8080];
   sleepAfter = "30m";

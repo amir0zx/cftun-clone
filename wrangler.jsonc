@@ -6,7 +6,7 @@
 
   "containers": [
     {
-      "class_name": "AppContainer",
+      "class_name": "CrimsonCFContainer",
       "image": "./Dockerfile",
       "instance_type": "standard-1",
       "max_instances": 10
@@ -17,7 +17,7 @@
     "bindings": [
       {
         "name": "APP_CONTAINER",
-        "class_name": "AppContainer"
+        "class_name": "CrimsonCFContainer"
       }
     ]
   },
@@ -26,6 +26,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["AppContainer"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["CrimsonCFContainer"]
     }
   ]
 }
