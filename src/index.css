@@ -659,6 +659,57 @@ th { position: sticky; top: 0; background: #190909; }
 }
 .export-form .caps-filter { grid-column: 1 / -1; }
 
+.toggle-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #4b1919;
+  border-radius: 11px;
+  background: #0b0505;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.range-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid #341111;
+  border-radius: 14px;
+  background: #0b0505;
+}
+
+.range-groups,
+.range-pager,
+.pager-nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pager-nums .ellipsis {
+  color: #a37474;
+  padding: 0 4px;
+}
+
+.mini-field {
+  display: grid;
+  gap: 6px;
+  color: #d6a2a2;
+}
+
+.muted { color: #a37474; }
+
 .history-actions {
   display: flex;
   gap: 8px;

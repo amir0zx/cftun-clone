@@ -36,7 +36,8 @@ type Tab =
   | "results"
   | "analytics"
   | "export"
-  | "dns";
+  | "dns"
+  | "vless";
 
 type ExportFormat = "txt" | "json" | "xlsx";
 
@@ -97,6 +98,26 @@ type DnsSettings = {
   mode: DnsReplaceMode;
 };
 
+type SourceGroupId = "cdn" | "warp" | "tunnel" | "custom";
+
+type VlessRetestResult = {
+  ip: string;
+  port: number;
+  status: ProbeState;
+  latency: number | null;
+};
+
+type VlessSettings = {
+  vlessUri: string;
+  uuid: string;
+  port: number;
+  sni: string;
+  host: string;
+  path: string;
+  topN: number;
+  concurrency: number;
+};
+
 type ScanBatch = {
   id: string;
   name: string;
@@ -116,6 +137,7 @@ type SourceItem = {
   url: string;
   ranges: string[];
   lastFetched: string | null;
+  group?: "cdn" | "warp" | "tunnel" | "custom";
 };
 
 type LogEntry = {
@@ -132,6 +154,7 @@ const STORAGE_KEYS = {
   sources: "cftun_sources_v2",
   proxyExport: "cftun_proxy_export_v1",
   dns: "cftun_dns_v1",
+  vless: "cftun_vless_v1",
 };
 
 const DEFAULT_RANGES = [
@@ -443,6 +466,52 @@ async function cfReplaceARecords(input: {
   return json;
 }
 
+function parseVlessUri(uri: string): VlessSettings | null {
+  try {
+    const u = new URL(uri.trim());
+    if (u.protocol !== "vless:") return null;
+    const uuid = decodeURIComponent(u.username || "");
+    const port = Number(u.port || 443);
+    const q = u.searchParams;
+    const sni = q.get("sni") || q.get("servername") || "";
+    const host = q.get("host") || "";
+    const path = q.get("path") || "/";
+    return {
+      vlessUri: uri.trim(),
+      uuid,
+      port: Number.isFinite(port) ? port : 443,
+      sni,
+      host,
+      path,
+      topN: 20,
+      concurrency: 20,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildVlessUri(input: {
+  ip: string;
+  port: number;
+  uuid: string;
+  sni: string;
+  host: string;
+  path: string;
+  name?: string;
+}): string {
+  const base = new URL(`vless://${encodeURIComponent(input.uuid)}@${input.ip}:${input.port}`);
+  base.searchParams.set("type", "ws");
+  base.searchParams.set("security", "tls");
+  if (input.sni) base.searchParams.set("sni", input.sni);
+  if (input.host) base.searchParams.set("host", input.host);
+  if (input.path) base.searchParams.set("path", input.path);
+  // Common defaults
+  base.searchParams.set("encryption", "none");
+  const fragment = input.name ? `#${encodeURIComponent(input.name)}` : "";
+  return `${base.toString()}${fragment}`;
+}
+
 function App() {
   const [ranges, setRanges] = useState<string[]>(() =>
     readStorage(STORAGE_KEYS.ranges, DEFAULT_RANGES),
@@ -465,12 +534,18 @@ function App() {
   const [currentBatch, setCurrentBatch] = useState<ScanBatch | null>(null);
   const [liveResults, setLiveResults] = useState<ScanResult[]>([]);
   const [ipsPerRange, setIpsPerRange] = useState(3);
+  const [rangeGroup, setRangeGroup] = useState<
+    "all" | "cdn" | "tunnel" | "warp" | "custom"
+  >("all");
+  const [rangePage, setRangePage] = useState(1);
+  const [rangePageSize, setRangePageSize] = useState(90);
 
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyDate, setHistoryDate] = useState("");
 
   const [sourceName, setSourceName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceGroup, setSourceGroup] = useState<SourceGroupId>("custom");
   const [portToggles, setPortToggles] = useState<number[]>([
     80, 443, 7844, 2053, 2083, 2087, 2096, 8443, 8080, 2408,
   ]);
@@ -514,6 +589,21 @@ function App() {
     }),
   );
 
+  const [vlessSettings, setVlessSettings] = useState<VlessSettings>(() =>
+    readStorage<VlessSettings>(STORAGE_KEYS.vless, {
+      vlessUri: "",
+      uuid: "",
+      port: 443,
+      sni: "",
+      host: "",
+      path: "/",
+      topN: 20,
+      concurrency: 20,
+    }),
+  );
+  const [vlessResults, setVlessResults] = useState<VlessRetestResult[]>([]);
+  const [vlessIsTesting, setVlessIsTesting] = useState(false);
+
   const runRef = useRef(false);
   const abortersRef = useRef<AbortController[]>([]);
 
@@ -549,8 +639,54 @@ function App() {
   useEffect(() => writeStorage(STORAGE_KEYS.sources, sources), [sources]);
   useEffect(() => writeStorage(STORAGE_KEYS.proxyExport, proxyExport), [proxyExport]);
   useEffect(() => writeStorage(STORAGE_KEYS.dns, dnsSettings), [dnsSettings]);
+  useEffect(() => writeStorage(STORAGE_KEYS.vless, vlessSettings), [vlessSettings]);
 
   const mergedResults = liveResults.length ? liveResults : allResults;
+
+  const rangesBySourceGroup = useMemo(() => {
+    const m = new Map<SourceGroupId, Set<string>>();
+    const add = (g: SourceGroupId, cidr: string) => {
+      if (!m.has(g)) m.set(g, new Set<string>());
+      m.get(g)!.add(cidr);
+    };
+    for (const s of sources) {
+      const g = (s.group || "custom") as SourceGroupId;
+      for (const r of s.ranges || []) add(g, r);
+    }
+    return m;
+  }, [sources]);
+
+  const filteredRanges = useMemo(() => {
+    const all = [...new Set(ranges)];
+    const defaults = new Set(DEFAULT_RANGES);
+    const inGroup = (cidr: string, g: typeof rangeGroup): boolean => {
+      if (g === "all") return true;
+      if (g === "cdn") {
+        return (
+          defaults.has(cidr) ||
+          (rangesBySourceGroup.get("cdn")?.has(cidr) ?? false)
+        );
+      }
+      if (g === "tunnel") return rangesBySourceGroup.get("tunnel")?.has(cidr) ?? false;
+      if (g === "warp") return rangesBySourceGroup.get("warp")?.has(cidr) ?? false;
+      // custom
+      if (defaults.has(cidr)) return false;
+      return true;
+    };
+    return all.filter((c) => inGroup(c, rangeGroup));
+  }, [rangeGroup, ranges, rangesBySourceGroup]);
+
+  const rangeTotalPages = useMemo(() => {
+    const size = Math.max(10, Math.min(300, rangePageSize || 90));
+    return Math.max(1, Math.ceil(filteredRanges.length / size));
+  }, [filteredRanges.length, rangePageSize]);
+
+  const pagedRanges = useMemo(() => {
+    const size = Math.max(10, Math.min(300, rangePageSize || 90));
+    const page = Math.max(1, Math.min(rangeTotalPages, rangePage));
+    const start = (page - 1) * size;
+    return filteredRanges.slice(start, start + size);
+  }, [filteredRanges, rangePage, rangePageSize, rangeTotalPages]);
 
   const stats = useMemo(() => {
     const success = mergedResults.filter((r) => r.overall === "success").length;
@@ -707,6 +843,17 @@ function App() {
     );
   }
 
+  function rangeSelectAllVisible(): void {
+    const visible = pagedRanges;
+    setSelectedRanges((prev) => {
+      const set = new Set(prev);
+      const allOn = visible.every((r) => set.has(r));
+      if (allOn) visible.forEach((r) => set.delete(r));
+      else visible.forEach((r) => set.add(r));
+      return [...set];
+    });
+  }
+
   function clearLogs(): void {
     setLogs([]);
     toast.success("Logs cleared");
@@ -735,10 +882,12 @@ function App() {
         url: url.toString(),
         ranges: [],
         lastFetched: null,
+        group: sourceGroup,
       };
       setSources((prev) => [item, ...prev]);
       setSourceName("");
       setSourceUrl("");
+      setSourceGroup("custom");
       toast.success("Source added");
       pushLog("ok", `Added source "${item.name}"`);
     } catch {
@@ -772,6 +921,8 @@ function App() {
       );
       toast.success(`Fetched ${cidrs.length} ranges from ${source.name}`);
       pushLog("ok", `Fetched ${cidrs.length} ranges from ${source.name}`);
+      setRangeGroup("all");
+      setRangePage(1);
     } catch {
       toast.error(`Fetch failed for ${source.name}`);
       pushLog("error", `Source fetch failed: ${source.name}`);
@@ -944,6 +1095,70 @@ function App() {
     }
   }
 
+  async function vlessRetest(): Promise<void> {
+    if (!currentBatch) {
+      toast.error("Run a scan first");
+      return;
+    }
+    if (!vlessSettings.uuid.trim()) {
+      toast.error("UUID required");
+      return;
+    }
+    if (!vlessSettings.sni.trim() || !vlessSettings.host.trim()) {
+      toast.error("SNI + Host required");
+      return;
+    }
+    const port = Math.max(1, Math.min(65535, Number(vlessSettings.port) || 443));
+    const topN = Math.max(1, Math.min(200, Number(vlessSettings.topN) || 20));
+    const conc = Math.max(
+      1,
+      Math.min(100, Number(vlessSettings.concurrency) || 20),
+    );
+
+    const candidates = currentBatchResults
+      .filter((r) => r.overall === "success")
+      .sort((a, b) => (a.latency ?? 1e9) - (b.latency ?? 1e9))
+      .slice(0, topN)
+      .map((r) => r.ipAddress);
+
+    if (!candidates.length) {
+      toast.error("No valid IPs in last scan");
+      return;
+    }
+
+    setVlessIsTesting(true);
+    setVlessResults([]);
+    pushLog("info", `VLESS retest: ${candidates.length} IPs on TCP:${port}`);
+
+    let idx = 0;
+    const out: VlessRetestResult[] = [];
+    const worker = async () => {
+      while (true) {
+        const i = idx;
+        idx += 1;
+        if (i >= candidates.length) return;
+        const ip = candidates[i];
+        try {
+          const probe = await probeIp(ip, [port]);
+          const st = probe.l4[0]?.status || probe.overall;
+          const lat = probe.l4[0]?.latency ?? null;
+          out.push({ ip, port, status: st, latency: lat });
+        } catch {
+          out.push({ ip, port, status: "failed", latency: null });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: conc }, worker));
+
+    out.sort((a, b) => (a.latency ?? 1e9) - (b.latency ?? 1e9));
+    setVlessResults(out);
+    setVlessIsTesting(false);
+    const ok = out.filter((r) => r.status === "success").length;
+    toast.success(`VLESS retest done: ${ok}/${out.length} ok`);
+    pushLog("ok", `VLESS retest done: ${ok}/${out.length} ok`);
+  }
+
   function stopScan(): void {
     runRef.current = false;
     abortersRef.current.forEach((c) => c.abort());
@@ -965,6 +1180,7 @@ function App() {
     { id: "analytics", label: "Analytics", icon: <Gauge size={14} /> },
     { id: "export", label: "Export", icon: <Download size={14} /> },
     { id: "dns", label: "DNS", icon: <Shield size={14} /> },
+    { id: "vless", label: "VLESS", icon: <Activity size={14} /> },
   ];
 
   const currentBatchResults = useMemo(() => {
@@ -1682,6 +1898,13 @@ function App() {
                 </button>
                 <button
                   className="btn ghost"
+                  onClick={rangeSelectAllVisible}
+                  type="button"
+                >
+                  Select Page
+                </button>
+                <button
+                  className="btn ghost"
                   onClick={() => setSelectedRanges([])}
                   type="button"
                 >
@@ -1695,8 +1918,102 @@ function App() {
                   Clear Results
                 </button>
               </div>
+              <div className="range-toolbar">
+                <div className="range-groups">
+                  {(
+                    [
+                      ["all", "All"],
+                      ["cdn", "CDN"],
+                      ["tunnel", "Tunnel"],
+                      ["warp", "WARP"],
+                      ["custom", "Custom"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={rangeGroup === id ? "port-chip on" : "port-chip"}
+                      onClick={() => {
+                        setRangeGroup(id);
+                        setRangePage(1);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="range-pager">
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={rangePage <= 1}
+                    onClick={() => setRangePage((p) => Math.max(1, p - 1))}
+                  >
+                    Prev
+                  </button>
+                  <div className="pager-nums">
+                    {Array.from({ length: rangeTotalPages })
+                      .slice(
+                        Math.max(0, rangePage - 3),
+                        Math.min(rangeTotalPages, rangePage + 2),
+                      )
+                      .map((_, i) => {
+                        const page = Math.max(1, rangePage - 2) + i;
+                        return (
+                          <button
+                            key={page}
+                            type="button"
+                            className={page === rangePage ? "port-chip on" : "port-chip"}
+                            onClick={() => setRangePage(page)}
+                          >
+                            {page}
+                          </button>
+                        );
+                      })}
+                    {rangeTotalPages > 1 && rangePage < rangeTotalPages - 2 && (
+                      <span className="ellipsis">…</span>
+                    )}
+                    {rangeTotalPages > 5 && (
+                      <button
+                        type="button"
+                        className={rangePage === rangeTotalPages ? "port-chip on" : "port-chip"}
+                        onClick={() => setRangePage(rangeTotalPages)}
+                      >
+                        {rangeTotalPages}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    disabled={rangePage >= rangeTotalPages}
+                    onClick={() =>
+                      setRangePage((p) => Math.min(rangeTotalPages, p + 1))
+                    }
+                  >
+                    Next
+                  </button>
+                  <label className="mini-field">
+                    Page size
+                    <select
+                      value={rangePageSize}
+                      onChange={(e) => {
+                        setRangePageSize(Number(e.target.value) || 90);
+                        setRangePage(1);
+                      }}
+                    >
+                      <option value={45}>45</option>
+                      <option value={90}>90</option>
+                      <option value={180}>180</option>
+                    </select>
+                  </label>
+                  <span className="muted">
+                    {filteredRanges.length} ranges
+                  </span>
+                </div>
+              </div>
               <div className="cidr-grid">
-                {ranges.map((r) => (
+                {pagedRanges.map((r) => (
                   <button
                     key={r}
                     className={`cidr-chip ${selectedRanges.includes(r) ? "on" : ""}`}
@@ -1742,6 +2059,32 @@ function App() {
 
           {activeTab === "sources" && (
             <div className="panel-block">
+              <div className="preset-row">
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => {
+                    setSourceName("Cloudflare IPv4 (official)");
+                    setSourceUrl("https://www.cloudflare.com/ips-v4");
+                    setSourceGroup("cdn");
+                    toast.info("Preset loaded (Cloudflare IPv4)");
+                  }}
+                >
+                  Preset: CF IPv4
+                </button>
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => {
+                    setSourceName("Cloudflare IPv6 (official)");
+                    setSourceUrl("https://www.cloudflare.com/ips-v6");
+                    setSourceGroup("cdn");
+                    toast.info("Preset loaded (Cloudflare IPv6)");
+                  }}
+                >
+                  Preset: CF IPv6
+                </button>
+              </div>
               <div className="source-form">
                 <input
                   placeholder="Source name"
@@ -1753,6 +2096,17 @@ function App() {
                   value={sourceUrl}
                   onChange={(e) => setSourceUrl(e.target.value)}
                 />
+                <select
+                  value={sourceGroup}
+                  onChange={(e) =>
+                    setSourceGroup(e.target.value as SourceGroupId)
+                  }
+                >
+                  <option value="custom">custom</option>
+                  <option value="cdn">cdn</option>
+                  <option value="tunnel">tunnel</option>
+                  <option value="warp">warp</option>
+                </select>
                 <button
                   className="btn primary"
                   onClick={addSource}
@@ -1776,8 +2130,29 @@ function App() {
                           ? `Last fetched: ${new Date(s.lastFetched).toLocaleString()}`
                           : "Never fetched"}
                       </small>
+                      <small>Group: {s.group || "custom"}</small>
                     </div>
                     <div className="source-actions">
+                      <select
+                        value={s.group || "custom"}
+                        onChange={(e) =>
+                          setSources((prev) =>
+                            prev.map((x) =>
+                              x.id === s.id
+                                ? {
+                                    ...x,
+                                    group: e.target.value as SourceGroupId,
+                                  }
+                                : x,
+                            ),
+                          )
+                        }
+                      >
+                        <option value="custom">custom</option>
+                        <option value="cdn">cdn</option>
+                        <option value="tunnel">tunnel</option>
+                        <option value="warp">warp</option>
+                      </select>
                       <button
                         className="btn ghost"
                         onClick={() => fetchSource(s)}
@@ -2587,19 +2962,18 @@ function App() {
                       }
                     />
                   </label>
-                  <label className="checkbox-row">
-                    <input
-                      type="checkbox"
-                      checked={dnsSettings.proxied}
-                      onChange={(e) =>
-                        setDnsSettings((p) => ({
-                          ...p,
-                          proxied: e.target.checked,
-                        }))
+                  <div className="toggle-row">
+                    <span className="caps-label">Proxied</span>
+                    <button
+                      type="button"
+                      className={dnsSettings.proxied ? "port-chip on" : "port-chip"}
+                      onClick={() =>
+                        setDnsSettings((p) => ({ ...p, proxied: !p.proxied }))
                       }
-                    />
-                    Proxied
-                  </label>
+                    >
+                      {dnsSettings.proxied ? "ON" : "OFF"}
+                    </button>
+                  </div>
                   <label>
                     TTL
                     <select
@@ -2686,6 +3060,212 @@ function App() {
                             <td>{ip}</td>
                           </tr>
                         ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "vless" && (
+            <div className="panel-block">
+              <h3 className="export-title">VLESS Retest + Builder</h3>
+              <p className="empty">
+                Paste a VLESS URI or fill fields, then retest your last scan IPs
+                on the VLESS port and export clean configs.
+              </p>
+
+              <div className="export-card">
+                <h4>Input</h4>
+                <div className="export-form">
+                  <label>
+                    VLESS URI (optional)
+                    <input
+                      value={vlessSettings.vlessUri}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({ ...p, vlessUri: e.target.value }))
+                      }
+                      placeholder="vless://uuid@host:443?type=ws&security=tls&sni=...&host=...&path=/..."
+                    />
+                  </label>
+                  <div className="export-actions" style={{ alignItems: "end" }}>
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={() => {
+                        const parsed = parseVlessUri(vlessSettings.vlessUri);
+                        if (!parsed) return void toast.error("Invalid VLESS URI");
+                        setVlessSettings((p) => ({
+                          ...p,
+                          uuid: parsed.uuid || p.uuid,
+                          port: parsed.port || p.port,
+                          sni: parsed.sni || p.sni,
+                          host: parsed.host || p.host,
+                          path: parsed.path || p.path,
+                        }));
+                        toast.success("Parsed VLESS URI");
+                      }}
+                    >
+                      Parse URI
+                    </button>
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      onClick={() => setVlessResults([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <label>
+                    UUID
+                    <input
+                      value={vlessSettings.uuid}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({ ...p, uuid: e.target.value }))
+                      }
+                      placeholder="uuid"
+                    />
+                  </label>
+                  <label>
+                    Port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={vlessSettings.port}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({
+                          ...p,
+                          port: Math.max(1, Math.min(65535, Number(e.target.value) || 443)),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    SNI
+                    <input
+                      value={vlessSettings.sni}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({ ...p, sni: e.target.value }))
+                      }
+                      placeholder="example.com"
+                    />
+                  </label>
+                  <label>
+                    Host
+                    <input
+                      value={vlessSettings.host}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({ ...p, host: e.target.value }))
+                      }
+                      placeholder="example.com"
+                    />
+                  </label>
+                  <label>
+                    WS Path
+                    <input
+                      value={vlessSettings.path}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({ ...p, path: e.target.value }))
+                      }
+                      placeholder="/"
+                    />
+                  </label>
+                  <label>
+                    Retest Top N IPs
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      value={vlessSettings.topN}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({
+                          ...p,
+                          topN: Math.max(1, Math.min(200, Number(e.target.value) || 20)),
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Concurrency
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={vlessSettings.concurrency}
+                      onChange={(e) =>
+                        setVlessSettings((p) => ({
+                          ...p,
+                          concurrency: Math.max(1, Math.min(100, Number(e.target.value) || 20)),
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="export-actions">
+                  <button
+                    className="btn primary"
+                    type="button"
+                    onClick={vlessRetest}
+                    disabled={vlessIsTesting}
+                  >
+                    {vlessIsTesting ? "Testing..." : "Retest Last Scan IPs"}
+                  </button>
+                  <button
+                    className="btn ghost"
+                    type="button"
+                    onClick={() => {
+                      const ok = vlessResults.filter((r) => r.status === "success");
+                      const lines = ok
+                        .map((r, i) =>
+                          buildVlessUri({
+                            ip: r.ip,
+                            port: r.port,
+                            uuid: vlessSettings.uuid.trim(),
+                            sni: vlessSettings.sni.trim(),
+                            host: vlessSettings.host.trim(),
+                            path: vlessSettings.path.trim() || "/",
+                            name: `CrimsonCLS-${i + 1}`,
+                          }),
+                        )
+                        .join("\n");
+                      if (!lines) return void toast.error("No OK IPs to export");
+                      downloadBlob(
+                        new Blob([lines], { type: "text/plain" }),
+                        `crimsoncls_vless_uris_${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
+                      );
+                    }}
+                  >
+                    Export URIs (TXT)
+                  </button>
+                </div>
+              </div>
+
+              <div className="export-card" style={{ marginTop: 10 }}>
+                <h4>Retest Results</h4>
+                <p>
+                  {vlessResults.filter((r) => r.status === "success").length} ok /{" "}
+                  {vlessResults.length} total
+                </p>
+                <div className="mini-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>IP</th>
+                        <th>Port</th>
+                        <th>Status</th>
+                        <th>Latency</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {vlessResults.slice(0, 200).map((r) => (
+                        <tr key={r.ip}>
+                          <td>{r.ip}</td>
+                          <td>{r.port}</td>
+                          <td className={`st ${r.status}`}>{r.status}</td>
+                          <td>{r.latency ?? "-"}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
