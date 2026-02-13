@@ -1823,40 +1823,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cftun-clone@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "cftun-clone@workspace:."
-  dependencies:
-    "@cloudflare/containers": "npm:^0.1.0"
-    "@eslint/js": "npm:^9.39.1"
-    "@types/cors": "npm:^2.8.19"
-    "@types/express": "npm:^5.0.6"
-    "@types/node": "npm:^24.10.1"
-    "@types/react": "npm:^19.2.7"
-    "@types/react-dom": "npm:^19.2.3"
-    "@vitejs/plugin-react": "npm:^5.1.1"
-    concurrently: "npm:^9.2.1"
-    cors: "npm:^2.8.6"
-    eslint: "npm:^9.39.1"
-    eslint-plugin-react-hooks: "npm:^7.0.1"
-    eslint-plugin-react-refresh: "npm:^0.4.24"
-    express: "npm:^5.2.1"
-    framer-motion: "npm:^12.34.0"
-    globals: "npm:^16.5.0"
-    lucide-react: "npm:^0.564.0"
-    react: "npm:^19.2.0"
-    react-dom: "npm:^19.2.0"
-    react-is: "npm:^19.2.4"
-    recharts: "npm:^3.7.0"
-    sonner: "npm:^2.0.7"
-    typescript: "npm:~5.9.3"
-    typescript-eslint: "npm:^8.48.0"
-    vite: "npm:^7.3.1"
-    wrangler: "npm:^4.65.0"
-    xlsx: "npm:^0.18.5"
-  languageName: unknown
-  linkType: soft
-
 "chalk@npm:4.1.2, chalk@npm:^4.0.0":
   version: 4.1.2
   resolution: "chalk@npm:4.1.2"
@@ -1999,6 +1965,40 @@ __metadata:
   checksum: 10c0/11dcf4a2e77ee793835d49f2c028838eae58b44f50d1ff08394a610bfd817523f105d6ae4d9b5bef0aad45510f633eb23c903e9902e4409bed1ce70cb82b9bf0
   languageName: node
   linkType: hard
+
+"crimsoncls@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "crimsoncls@workspace:."
+  dependencies:
+    "@cloudflare/containers": "npm:^0.1.0"
+    "@eslint/js": "npm:^9.39.1"
+    "@types/cors": "npm:^2.8.19"
+    "@types/express": "npm:^5.0.6"
+    "@types/node": "npm:^24.10.1"
+    "@types/react": "npm:^19.2.7"
+    "@types/react-dom": "npm:^19.2.3"
+    "@vitejs/plugin-react": "npm:^5.1.1"
+    concurrently: "npm:^9.2.1"
+    cors: "npm:^2.8.6"
+    eslint: "npm:^9.39.1"
+    eslint-plugin-react-hooks: "npm:^7.0.1"
+    eslint-plugin-react-refresh: "npm:^0.4.24"
+    express: "npm:^5.2.1"
+    framer-motion: "npm:^12.34.0"
+    globals: "npm:^16.5.0"
+    lucide-react: "npm:^0.564.0"
+    react: "npm:^19.2.0"
+    react-dom: "npm:^19.2.0"
+    react-is: "npm:^19.2.4"
+    recharts: "npm:^3.7.0"
+    sonner: "npm:^2.0.7"
+    typescript: "npm:~5.9.3"
+    typescript-eslint: "npm:^8.48.0"
+    vite: "npm:^7.3.1"
+    wrangler: "npm:^4.65.0"
+    xlsx: "npm:^0.18.5"
+  languageName: unknown
+  linkType: soft
 
 "cross-spawn@npm:^7.0.6":
   version: 7.0.6

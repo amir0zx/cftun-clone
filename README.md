@@ -1,73 +1,71 @@
-# React + TypeScript + Vite
+# CrimsonCLS
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**CrimsonCLS** is a fast **Cloudflare IP scanner** that tests endpoints using **Layer 4 (TCP handshake)** (not HTTPS), keeps scan history, exports clean newline TXT lists, and generates ready-to-import configs for **Xray-core**, **sing-box**, and **Clash**.
 
-Currently, two official plugins are available:
+If you searched for: **cloudflare ip scanner**, **cloudflare ip range scanner**, **cloudflare tunnel ip scanner**, **warp ip scanner**, **fastest cloudflare ip**, this project is built for exactly that workflow.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## React Compiler
+- **L4 handshake probing** (TCP connect latency + open/closed)
+- **Parallel scanning** (configurable concurrency)
+- **IP range groups + paging**: CDN / Tunnel / WARP / Custom / All
+- **Sources**: fetch ranges from URLs/APIs, presets for Cloudflare official lists
+- **Results filters** + capability tags (CDN/Tunnel/WARP/BPB heuristics)
+- **Exports**:
+  - TXT (one IP per line, real newlines)
+  - JSON/XLSX tables
+  - Proxy configs: **Xray**, **sing-box**, **Clash (YAML/JSON)**
+- **Cloudflare DNS tab**: push fastest IPs into A records automatically (replace mode)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Quick Start (Docker Compose, recommended)
 
-## Expanding the ESLint configuration
+This runs the UI and probe server on **your own PC** so results match **your network**.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+docker compose up -d
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- `http://localhost:8080`
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Why not HTTPS probes?
+
+Many Cloudflare IPs won’t complete HTTPS the way you expect (SNI/certs/ciphers). CrimsonCLS uses **TCP handshake tests** to reliably measure reachability/latency.
+
+## Hosted UI vs running on user PC
+
+Browsers block calling `http://localhost:8787` from an `https://` hosted site (mixed content). If you want **real user-PC scanning**, use the Docker Compose setup above.
+
+## Cloudflare DNS (Fastest IPs to A records)
+
+In the **DNS** tab you can:
+
+- select top N fastest IPs (from last scan)
+- filter by capabilities
+- replace existing A records for a hostname
+
+Use a scoped Cloudflare API token (Zone DNS Edit only for that zone).
+
+## Development
+
+```bash
+yarn install
+yarn dev
 ```
+
+## Releases & Docker Images
+
+- GitHub Container Registry image: `ghcr.io/amir0zx/crimsoncls:latest`
+
+## Persian README
+
+- `README.fa.md`
+
+## License
+
+TBD (choose MIT/Apache-2.0 if you want it fully open).
+
+---
+
+Built by `github.com/amir0zx`

@@ -185,7 +185,8 @@ if (SERVE_STATIC) {
   app.use(express.static(distDir, { index: false }));
 
   // SPA fallback: everything else becomes index.html
-  app.get('*', (_req, res) => {
+  // Express 5 + path-to-regexp v6 doesn't accept '*' routes; use regex.
+  app.get(/.*/, (_req, res) => {
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }

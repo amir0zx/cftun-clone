@@ -1,0 +1,10 @@
+services:
+  crimsoncls:
+    image: ghcr.io/amir0zx/crimsoncls:latest
+    container_name: crimsoncls
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - SERVE_STATIC=1
+    restart: unless-stopped
