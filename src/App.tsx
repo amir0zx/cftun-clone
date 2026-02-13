@@ -1931,29 +1931,35 @@ function App() {
                 </label>
                 <div className="caps-filter">
                   <span className="caps-label">Capabilities</span>
-                  {(
-                    [
-                      ["cdn", "CDN"],
-                      ["tunnel", "Tunnel"],
-                      ["warp", "WARP*"],
-                      ["bpb", "BPB"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <label key={id} className="checkbox-row mini">
-                      <input
-                        type="checkbox"
-                        checked={resultFilterCaps.includes(id)}
-                        onChange={(e) =>
+                  <div className="caps-pills">
+                    {(
+                      [
+                        ["cdn", "CDN"],
+                        ["tunnel", "Tunnel"],
+                        ["warp", "WARP*"],
+                        ["bpb", "BPB"],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={
+                          resultFilterCaps.includes(id)
+                            ? "port-chip on"
+                            : "port-chip"
+                        }
+                        onClick={() =>
                           setResultFilterCaps((prev) =>
-                            e.target.checked
-                              ? [...prev, id]
-                              : prev.filter((x) => x !== id),
+                            prev.includes(id)
+                              ? prev.filter((x) => x !== id)
+                              : [...prev, id],
                           )
                         }
-                      />
-                      {label}
-                    </label>
-                  ))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   className="btn ghost"
@@ -2535,6 +2541,7 @@ function App() {
                   <label>
                     API Token
                     <input
+                      type="password"
                       value={dnsSettings.token}
                       onChange={(e) =>
                         setDnsSettings((p) => ({ ...p, token: e.target.value }))
